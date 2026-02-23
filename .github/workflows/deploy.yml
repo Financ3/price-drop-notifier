@@ -1,0 +1,70 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy-backend:
+    name: Build & deploy Lambda (SAM)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: aws-actions/setup-sam@v2
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: SAM build
+        working-directory: backend
+        run: sam build
+
+      - name: SAM deploy
+        working-directory: backend
+        run: |
+          sam deploy \
+            --stack-name price-drop-notifier \
+            --s3-bucket price-drop-notifier-sam-156950944647 \
+            --region us-east-1 \
+            --capabilities CAPABILITY_IAM \
+            --parameter-overrides \
+              "SenderEmail=noreply@codebystory.com" \
+              "Environment=prod" \
+              "ScraperApiKey=${{ secrets.SCRAPER_API_KEY }}" \
+            --no-fail-on-empty-changeset \
+            --no-confirm-changeset
+
+  deploy-frontend:
+    name: Sync frontend to S3 + invalidate CloudFront
+    runs-on: ubuntu-latest
+    needs: deploy-backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Sync to S3
+        run: |
+          aws s3 sync frontend/ s3://pricedrop.codebystory.com \
+            --delete \
+            --cache-control "max-age=3600"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id E7PC0NXCQI11I \
+            --paths "/*"
