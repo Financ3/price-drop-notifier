@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Price Drop Notifier</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Background orbs -->
+  <div class="bg-orb bg-orb--1" aria-hidden="true"></div>
+  <div class="bg-orb bg-orb--2" aria-hidden="true"></div>
+
+  <main class="page">
+
+    <!-- Hero headline -->
+    <header class="hero">
+      <div class="hero__badge">
+        <span class="badge-dot"></span>
+        Live price monitoring
+      </div>
+      <h1 class="hero__title">
+        Never miss a<br />
+        <span class="gradient-text">price drop</span> again
+      </h1>
+      <p class="hero__subtitle">
+        Paste a product link, enter your email, and we'll notify you the moment
+        the price falls — powered by AWS Lambda, DynamoDB &amp; SNS.
+      </p>
+    </header>
+
+    <!-- Subscription card -->
+    <div class="card" id="subscribeCard">
+
+      <!-- Step 1: form -->
+      <div class="card__step" id="stepForm">
+        <h2 class="card__title">Track a product</h2>
+
+        <form id="subscribeForm" novalidate>
+
+          <div class="field" id="fieldUrl">
+            <label class="field__label" for="inputUrl">Product URL</label>
+            <div class="field__input-wrap">
+              <svg class="field__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+              </svg>
+              <input
+                id="inputUrl"
+                type="url"
+                name="url"
+                class="field__input"
+                placeholder="https://www.amazon.com/dp/..."
+                autocomplete="off"
+                spellcheck="false"
+                required
+              />
+            </div>
+            <span class="field__error" id="errorUrl" aria-live="polite"></span>
+          </div>
+
+          <div class="field" id="fieldName">
+            <label class="field__label" for="inputName">
+              Product name <span style="font-weight:400;color:var(--c-muted)">(optional — helps us find the right price)</span>
+            </label>
+            <div class="field__input-wrap">
+              <svg class="field__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M20 7H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2Z"/>
+                <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+              </svg>
+              <input
+                id="inputName"
+                type="text"
+                name="productName"
+                class="field__input"
+                placeholder="e.g. Nike Air Max 90"
+                autocomplete="off"
+              />
+            </div>
+          </div>
+
+          <div class="field" id="fieldEmail">
+            <label class="field__label" for="inputEmail">Email address</label>
+            <div class="field__input-wrap">
+              <svg class="field__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="4" width="20" height="16" rx="2"/>
+                <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+              </svg>
+              <input
+                id="inputEmail"
+                type="email"
+                name="email"
+                class="field__input"
+                placeholder="you@example.com"
+                autocomplete="email"
+                required
+              />
+            </div>
+            <span class="field__error" id="errorEmail" aria-live="polite"></span>
+          </div>
+
+          <button type="submit" class="btn btn--primary" id="submitBtn">
+            <span class="btn__text">Notify me of price drops</span>
+            <span class="btn__spinner" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+            </span>
+          </button>
+
+          <!-- Global error banner -->
+          <div class="alert alert--error" id="alertError" role="alert" hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/>
+              <line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span id="alertErrorText"></span>
+          </div>
+        </form>
+      </div><!-- /stepForm -->
+
+      <!-- Step 2: validating / finding price -->
+      <div class="card__step" id="stepChecking" hidden>
+        <div class="status-block">
+          <div class="status-spinner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+            </svg>
+          </div>
+          <p class="status-text" id="checkingText">Checking product page…</p>
+          <p class="status-subtext">This usually takes a few seconds.</p>
+        </div>
+      </div>
+
+      <!-- Step 3: success -->
+      <div class="card__step" id="stepSuccess" hidden>
+        <div class="success-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M20 6 9 17l-5-5"/>
+          </svg>
+        </div>
+        <h2 class="card__title">You're subscribed!</h2>
+        <p class="card__subtitle">Check your inbox for a confirmation email with current pricing.</p>
+
+        <div class="product-preview" id="productPreview">
+          <div class="product-preview__name" id="previewName"></div>
+          <div class="product-preview__price" id="previewPrice"></div>
+        </div>
+
+        <button class="btn btn--ghost" id="trackAnotherBtn">Track another product</button>
+      </div>
+
+    </div><!-- /card -->
+
+    <!-- Architecture callout -->
+    <section class="arch">
+      <h3 class="arch__title">How it works</h3>
+      <ol class="arch__steps">
+        <li>
+          <div class="arch__num">1</div>
+          <div>
+            <strong>Subscribe</strong> — API Gateway → Lambda validates the URL and scrapes the product price, then stores it in DynamoDB.
+          </div>
+        </li>
+        <li>
+          <div class="arch__num">2</div>
+          <div>
+            <strong>Monitor</strong> — A scheduled Lambda runs daily, re-scrapes all tracked products, and compares prices.
+          </div>
+        </li>
+        <li>
+          <div class="arch__num">3</div>
+          <div>
+            <strong>Notify</strong> — When a price drops, the scraper publishes to an SNS topic. A subscriber Lambda fans out personalised SES emails to all watchers.
+          </div>
+        </li>
+      </ol>
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

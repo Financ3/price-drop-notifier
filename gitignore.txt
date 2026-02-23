@@ -1,0 +1,22 @@
+# Environment / secrets
+.env
+*.env.local
+
+# SAM build artifacts
+backend/.aws-sam/
+backend/.aws-sam/**
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Node (if you ever add a build step)
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db

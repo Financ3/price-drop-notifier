@@ -1,0 +1,255 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Price Drop Notifier — Monitors product prices and sends email notifications
+  when prices drop. Demonstrates fan-out notification patterns with SNS + SES.
+
+Parameters:
+  SenderEmail:
+    Type: String
+    Description: SES-verified sender email address (must be verified in AWS SES)
+  Environment:
+    Type: String
+    Default: prod
+    AllowedValues: [dev, prod]
+  ScraperSchedule:
+    Type: String
+    Default: rate(24 hours)
+    Description: How often to check prices (EventBridge schedule expression)
+  ScraperApiKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: ScraperAPI key for JS-rendered page support (optional)
+
+Globals:
+  Function:
+    Timeout: 30
+    Runtime: python3.13
+    Architectures: [x86_64]
+    Layers:
+      - !Ref UtilsLayer
+    Environment:
+      Variables:
+        PRODUCTS_TABLE: !Ref ProductsTable
+        SUBSCRIPTIONS_TABLE: !Ref SubscriptionsTable
+        SENDER_EMAIL: !Ref SenderEmail
+        SNS_TOPIC_ARN: !Ref PriceDropTopic
+        ENVIRONMENT: !Ref Environment
+        SCRAPER_API_KEY: !Ref ScraperApiKey
+  Api:
+    Cors:
+      AllowMethods: "'GET,POST,OPTIONS'"
+      AllowHeaders: "'Content-Type'"
+      AllowOrigin: "'*'"
+
+Resources:
+
+  # ── Shared Lambda Layer ─────────────────────────────────────────────────────
+  UtilsLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub price-drop-utils-${Environment}
+      Description: Shared scraping and email utilities
+      ContentUri: layers/utils/
+      CompatibleRuntimes:
+        - python3.13
+      RetentionPolicy: Delete
+    Metadata:
+      BuildMethod: python3.13
+
+  # ── DynamoDB Tables ─────────────────────────────────────────────────────────
+  ProductsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub price-drop-products-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: productUrl
+          AttributeType: S
+      KeySchema:
+        - AttributeName: productUrl
+          KeyType: HASH
+
+  SubscriptionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub price-drop-subscriptions-${Environment}
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: subscriptionId
+          AttributeType: S
+        - AttributeName: productUrl
+          AttributeType: S
+        - AttributeName: unsubscribeToken
+          AttributeType: S
+      KeySchema:
+        - AttributeName: subscriptionId
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: productUrl-index
+          KeySchema:
+            - AttributeName: productUrl
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: unsubscribeToken-index
+          KeySchema:
+            - AttributeName: unsubscribeToken
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  # ── SNS Topic (fan-out hub) ─────────────────────────────────────────────────
+  PriceDropTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub price-drop-events-${Environment}
+      DisplayName: Price Drop Notifier
+
+  # ── Lambda: Subscribe ───────────────────────────────────────────────────────
+  SubscribeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub price-drop-subscribe-${Environment}
+      CodeUri: functions/subscribe/
+      Handler: handler.lambda_handler
+      Timeout: 70
+      Description: Validates product URL, creates subscription, sends welcome email
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SubscriptionsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
+      Events:
+        SubscribePost:
+          Type: Api
+          Properties:
+            Path: /subscribe
+            Method: POST
+        SubscribeOptions:
+          Type: Api
+          Properties:
+            Path: /subscribe
+            Method: OPTIONS
+
+  # ── Lambda: Scraper (scheduled) ─────────────────────────────────────────────
+  ScraperFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub price-drop-scraper-${Environment}
+      CodeUri: functions/scraper/
+      Handler: handler.lambda_handler
+      Description: Daily job — scrapes prices and publishes price-drop events to SNS
+      Timeout: 300
+      MemorySize: 256
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref ProductsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SubscriptionsTable
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt PriceDropTopic.TopicName
+      Events:
+        ScheduledScrape:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ScraperSchedule
+            Name: !Sub price-drop-schedule-${Environment}
+            Description: Checks product prices on a schedule
+            Enabled: true
+
+  # ── Lambda: Notifier (SNS subscriber) ──────────────────────────────────────
+  NotifierFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub price-drop-notifier-${Environment}
+      CodeUri: functions/notifier/
+      Handler: handler.lambda_handler
+      Description: Triggered by SNS — fans out price-drop emails to all subscribers
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SubscriptionsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
+      Events:
+        PriceDropEvent:
+          Type: SNS
+          Properties:
+            Topic: !Ref PriceDropTopic
+
+  # ── CloudWatch Log Groups (7-day retention to control log storage costs) ────
+  SubscribeFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/price-drop-subscribe-${Environment}
+      RetentionInDays: 7
+
+  ScraperFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/price-drop-scraper-${Environment}
+      RetentionInDays: 7
+
+  NotifierFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/price-drop-notifier-${Environment}
+      RetentionInDays: 7
+
+  UnsubscribeFunctionLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/price-drop-unsubscribe-${Environment}
+      RetentionInDays: 7
+
+  # ── Lambda: Unsubscribe ─────────────────────────────────────────────────────
+  UnsubscribeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub price-drop-unsubscribe-${Environment}
+      CodeUri: functions/unsubscribe/
+      Handler: handler.lambda_handler
+      Description: Handles unsubscribe requests via tokenized link
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SubscriptionsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref ProductsTable
+      Events:
+        UnsubscribeGet:
+          Type: Api
+          Properties:
+            Path: /unsubscribe
+            Method: GET
+
+Outputs:
+  ApiUrl:
+    Description: API Gateway base URL — set this in frontend/app.js
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod"
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiUrl
+
+  PriceDropTopicArn:
+    Description: SNS Topic ARN for price drop events
+    Value: !Ref PriceDropTopic
+    Export:
+      Name: !Sub ${AWS::StackName}-TopicArn
+
+  ProductsTableName:
+    Description: DynamoDB products table name
+    Value: !Ref ProductsTable
+
+  SubscriptionsTableName:
+    Description: DynamoDB subscriptions table name
+    Value: !Ref SubscriptionsTable
