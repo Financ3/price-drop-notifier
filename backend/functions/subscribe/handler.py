@@ -96,6 +96,17 @@ def lambda_handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": _CORS_HEADERS, "body": ""}
 
+    # ── Log request context for traffic analysis ──────────────────────────────
+    req_ctx = event.get("requestContext", {})
+    identity = req_ctx.get("identity", {})
+    source_ip = identity.get("sourceIp", "unknown")
+    user_agent = (event.get("headers") or {}).get("user-agent") or (event.get("headers") or {}).get("User-Agent", "unknown")
+    referer = (event.get("headers") or {}).get("referer") or (event.get("headers") or {}).get("Referer", "none")
+    logger.info(
+        "TRAFFIC source_ip=%s user_agent=%r referer=%r",
+        source_ip, user_agent, referer,
+    )
+
     # ── Parse body ────────────────────────────────────────────────────────────
     try:
         body = json.loads(event.get("body") or "{}")
