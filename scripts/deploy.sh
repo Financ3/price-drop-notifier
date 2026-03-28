@@ -20,6 +20,7 @@ AWS_REGION="${AWS_REGION:-us-east-1}"
 ENVIRONMENT="${ENVIRONMENT:-prod}"
 SENDER_EMAIL="${SENDER_EMAIL:-noreply@codebystory.com}"
 SCRAPER_API_KEY="${SCRAPER_API_KEY:-}"
+RECAPTCHA_SECRET_KEY="${RECAPTCHA_SECRET_KEY:-}"
 SAM_BUCKET="${SAM_BUCKET:-}"   # Auto-created if empty
 
 echo ""
@@ -72,6 +73,7 @@ sam deploy \
     "SenderEmail=${SENDER_EMAIL}" \
     "Environment=${ENVIRONMENT}" \
     "ScraperApiKey=${SCRAPER_API_KEY}" \
+    "RecaptchaSecretKey=${RECAPTCHA_SECRET_KEY}" \
   --no-fail-on-empty-changeset
 
 # ── Capture outputs ───────────────────────────────────────────────────────────

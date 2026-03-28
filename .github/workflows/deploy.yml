@@ -40,6 +40,7 @@ jobs:
               "SenderEmail=noreply@codebystory.com" \
               "Environment=prod" \
               "ScraperApiKey=${{ secrets.SCRAPER_API_KEY }}" \
+              "RecaptchaSecretKey=${{ secrets.RECAPTCHA_SECRET_KEY }}" \
             --no-fail-on-empty-changeset \
             --no-confirm-changeset
 

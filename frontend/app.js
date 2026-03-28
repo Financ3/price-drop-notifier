@@ -28,7 +28,8 @@ const checkingText = document.getElementById('checkingText');
 
 const previewName  = document.getElementById('previewName');
 const previewPrice = document.getElementById('previewPrice');
-const trackAnother = document.getElementById('trackAnotherBtn');
+const trackAnother  = document.getElementById('trackAnotherBtn');
+const errorCaptcha  = document.getElementById('errorCaptcha');
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function showStep(step) {
@@ -105,6 +106,13 @@ form.addEventListener('submit', async (e) => {
 
   if (!validateForm()) return;
 
+  const recaptchaToken = grecaptcha.getResponse();
+  if (!recaptchaToken) {
+    errorCaptcha.textContent = 'Please complete the CAPTCHA.';
+    return;
+  }
+  errorCaptcha.textContent = '';
+
   const url         = inputUrl.value.trim();
   const email       = inputEmail.value.trim().toLowerCase();
   const productName = inputName.value.trim();
@@ -119,7 +127,7 @@ form.addEventListener('submit', async (e) => {
     const resp = await fetch(`${API_BASE_URL}/subscribe`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, email, productName }),
+      body: JSON.stringify({ url, email, productName, recaptchaToken }),
     });
 
     const data = await resp.json();
@@ -130,6 +138,7 @@ form.addEventListener('submit', async (e) => {
 
       // Switch back to form and show error
       showStep(stepForm);
+      grecaptcha.reset();
       showGlobalError(msg);
 
       // If it's a field-specific error, highlight the relevant field too
@@ -165,6 +174,7 @@ form.addEventListener('submit', async (e) => {
   } catch (err) {
     // Network error
     showStep(stepForm);
+    grecaptcha.reset();
     showGlobalError('Could not reach the server. Check your connection and try again.');
     console.error(err);
   } finally {
@@ -177,6 +187,8 @@ form.addEventListener('submit', async (e) => {
 trackAnother.addEventListener('click', () => {
   form.reset();
   hideGlobalError();
+  grecaptcha.reset();
+  errorCaptcha.textContent = '';
   [fieldUrl, fieldEmail].forEach(f => f.classList.remove('field--error'));
   inputName.value = '';
   [errorUrl, errorEmail].forEach(e => (e.textContent = ''));

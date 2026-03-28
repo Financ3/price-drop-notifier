@@ -21,6 +21,11 @@ Parameters:
     Default: ""
     NoEcho: true
     Description: ScraperAPI key for JS-rendered page support (optional)
+  RecaptchaSecretKey:
+    Type: String
+    Default: ""
+    NoEcho: true
+    Description: Google reCAPTCHA v2 secret key for bot protection
 
 Globals:
   Function:
@@ -37,6 +42,7 @@ Globals:
         SNS_TOPIC_ARN: !Ref PriceDropTopic
         ENVIRONMENT: !Ref Environment
         SCRAPER_API_KEY: !Ref ScraperApiKey
+        RECAPTCHA_SECRET_KEY: !Ref RecaptchaSecretKey
   Api:
     Cors:
       AllowMethods: "'GET,POST,OPTIONS'"

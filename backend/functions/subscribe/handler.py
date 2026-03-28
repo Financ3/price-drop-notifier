@@ -14,6 +14,8 @@ import json
 import logging
 import os
 import re
+import urllib.parse
+import urllib.request
 import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -39,6 +41,24 @@ _CORS_HEADERS = {
 }
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def _verify_recaptcha(token: str) -> bool:
+    secret = os.environ.get("RECAPTCHA_SECRET_KEY", "")
+    if not secret:
+        logger.error("RECAPTCHA_SECRET_KEY is not set")
+        return False
+    data = urllib.parse.urlencode({"secret": secret, "response": token}).encode()
+    req = urllib.request.Request(
+        "https://www.google.com/recaptcha/api/siteverify", data=data, method="POST"
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            result = json.loads(resp.read())
+        return result.get("success", False)
+    except Exception as exc:
+        logger.error("reCAPTCHA verification failed: %s", exc)
+        return False
 
 
 def _resp(status: int, body: dict) -> dict:
@@ -116,6 +136,13 @@ def lambda_handler(event: dict, context) -> dict:
     url = (body.get("url") or "").strip()
     email = (body.get("email") or "").strip().lower()
     product_name = (body.get("productName") or "").strip()
+    recaptcha_token = (body.get("recaptchaToken") or "").strip()
+
+    if not recaptcha_token:
+        return _resp(400, {"error": "Please complete the CAPTCHA."})
+
+    if not _verify_recaptcha(recaptcha_token):
+        return _resp(400, {"error": "CAPTCHA verification failed. Please try again."})
 
     if not url or not email:
         return _resp(400, {"error": "Both 'url' and 'email' are required."})
