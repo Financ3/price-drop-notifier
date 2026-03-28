@@ -29,7 +29,8 @@ const checkingText = document.getElementById('checkingText');
 const previewName  = document.getElementById('previewName');
 const previewPrice = document.getElementById('previewPrice');
 const trackAnother  = document.getElementById('trackAnotherBtn');
-const errorCaptcha  = document.getElementById('errorCaptcha');
+
+const RECAPTCHA_SITE_KEY = '6LdnP5wsAAAAAHBp6N7Fm5ENR7Tqv50425NZWKhS';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function showStep(step) {
@@ -106,12 +107,7 @@ form.addEventListener('submit', async (e) => {
 
   if (!validateForm()) return;
 
-  const recaptchaToken = grecaptcha.getResponse();
-  if (!recaptchaToken) {
-    errorCaptcha.textContent = 'Please complete the CAPTCHA.';
-    return;
-  }
-  errorCaptcha.textContent = '';
+  const recaptchaToken = await grecaptcha.execute(RECAPTCHA_SITE_KEY, { action: 'subscribe' });
 
   const url         = inputUrl.value.trim();
   const email       = inputEmail.value.trim().toLowerCase();
@@ -138,7 +134,6 @@ form.addEventListener('submit', async (e) => {
 
       // Switch back to form and show error
       showStep(stepForm);
-      grecaptcha.reset();
       showGlobalError(msg);
 
       // If it's a field-specific error, highlight the relevant field too
@@ -174,7 +169,6 @@ form.addEventListener('submit', async (e) => {
   } catch (err) {
     // Network error
     showStep(stepForm);
-    grecaptcha.reset();
     showGlobalError('Could not reach the server. Check your connection and try again.');
     console.error(err);
   } finally {
@@ -187,8 +181,6 @@ form.addEventListener('submit', async (e) => {
 trackAnother.addEventListener('click', () => {
   form.reset();
   hideGlobalError();
-  grecaptcha.reset();
-  errorCaptcha.textContent = '';
   [fieldUrl, fieldEmail].forEach(f => f.classList.remove('field--error'));
   inputName.value = '';
   [errorUrl, errorEmail].forEach(e => (e.textContent = ''));

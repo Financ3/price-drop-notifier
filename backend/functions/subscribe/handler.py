@@ -55,7 +55,9 @@ def _verify_recaptcha(token: str) -> bool:
     try:
         with urllib.request.urlopen(req, timeout=5) as resp:
             result = json.loads(resp.read())
-        return result.get("success", False)
+        score = result.get("score", 0)
+        logger.info("reCAPTCHA score=%.2f action=%s", score, result.get("action", ""))
+        return result.get("success", False) and score >= 0.5
     except Exception as exc:
         logger.error("reCAPTCHA verification failed: %s", exc)
         return False
@@ -142,7 +144,7 @@ def lambda_handler(event: dict, context) -> dict:
         return _resp(400, {"error": "Please complete the CAPTCHA."})
 
     if not _verify_recaptcha(recaptcha_token):
-        return _resp(400, {"error": "CAPTCHA verification failed. Please try again."})
+        return _resp(400, {"error": "Your request was flagged as suspicious and could not be processed."})
 
     if not url or not email:
         return _resp(400, {"error": "Both 'url' and 'email' are required."})
