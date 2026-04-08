@@ -157,9 +157,9 @@ def lambda_handler(event: dict, context) -> dict:
 
     api_base = _get_api_base_url(event)
 
-    # ── Scrape product (fast, no JS rendering — must stay within 29s API GW limit) ──
+    # ── Scrape product ────────────────────────────────────────────────────────
     logger.info("Scraping URL: %s (product_name=%r)", url, product_name)
-    product = scrape_product(url, render=False, product_name=product_name)
+    product = scrape_product(url, product_name=product_name)
     if product and product.get("price"):
         logger.info("Found product: %s at %s %s", product["name"], product["currency"], product["price"])
     else:

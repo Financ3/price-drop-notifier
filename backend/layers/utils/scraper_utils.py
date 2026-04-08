@@ -8,15 +8,13 @@ Strategy (applied in order):
   4. Regex sweep               — last-resort pattern match on page text
 
 Limitations:
-  - JavaScript-rendered pages (React/Next.js SPAs) require a JS-capable
-    fetcher. Set SCRAPER_API_KEY to route all requests through ScraperAPI
-    with render=true, which executes JavaScript before returning HTML.
+  - JavaScript-rendered pages (React/Next.js SPAs) may not be scraped
+    reliably since prices are rendered client-side.
   - Sites with aggressive anti-bot measures (Amazon, Cloudflare-protected
-    pages) will block or return empty content without ScraperAPI.
+    pages) may block or return empty content.
 """
 
 import json
-import os
 import re
 import logging
 from typing import Optional
@@ -342,31 +340,8 @@ def _try_proximity_sweep(soup: BeautifulSoup, anchor=None) -> Optional[dict]:
     return None
 
 
-def _fetch_html(url: str, render: bool = True) -> Optional[str]:
-    """
-    Fetch the page HTML.
-
-    When render=True and SCRAPER_API_KEY is set, routes through ScraperAPI
-    with render=true so JavaScript-rendered pages (React/Next.js) are fully
-    executed before the HTML is returned. This can take 30-60 seconds.
-
-    When render=False, skips ScraperAPI entirely and makes a direct request
-    (fast, suitable for synchronous API Gateway paths with a 29s hard limit).
-    """
-    scraper_key = os.environ.get("SCRAPER_API_KEY", "")
-    if render and scraper_key:
-        from urllib.parse import quote_plus
-        api_url = (
-            f"https://api.scraperapi.com/?api_key={scraper_key}"
-            f"&url={quote_plus(url)}&render=true"
-        )
-        try:
-            resp = requests.get(api_url, timeout=60)
-            resp.raise_for_status()
-            return resp.text
-        except Exception as e:
-            logger.warning("ScraperAPI render fetch failed (%s), falling back to direct", e)
-
+def _fetch_html(url: str) -> Optional[str]:
+    """Fetch the page HTML with browser-like headers."""
     try:
         resp = requests.get(url, headers=_HEADERS, timeout=15)
         resp.raise_for_status()
@@ -376,7 +351,7 @@ def _fetch_html(url: str, render: bool = True) -> Optional[str]:
         return None
 
 
-def scrape_product(url: str, render: bool = True, product_name: str = "") -> Optional[dict]:
+def scrape_product(url: str, product_name: str = "") -> Optional[dict]:
     """
     Scrape a product page and return a dict with keys:
       - name     (str)
@@ -391,17 +366,13 @@ def scrape_product(url: str, render: bool = True, product_name: str = "") -> Opt
       This reliably targets the correct product even when a page has many
       other prices (recommendations, carousels, sidebars).
       Falls back to the H1 heading when not provided.
-
-    render — pass False for fast scraping (no ScraperAPI JS rendering) when
-      inside an API Gateway request (29s hard limit). The scheduled scraper
-      uses render=True (default) since it runs standalone.
     """
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.netloc:
         logger.error("Invalid URL: %s", url)
         return None
 
-    html = _fetch_html(url, render=render)
+    html = _fetch_html(url)
     if not html:
         return None
 

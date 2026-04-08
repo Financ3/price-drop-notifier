@@ -16,11 +16,6 @@ Parameters:
     Type: String
     Default: rate(24 hours)
     Description: How often to check prices (EventBridge schedule expression)
-  ScraperApiKey:
-    Type: String
-    Default: ""
-    NoEcho: true
-    Description: ScraperAPI key for JS-rendered page support (optional)
   RecaptchaSecretKey:
     Type: String
     Default: ""
@@ -41,7 +36,6 @@ Globals:
         SENDER_EMAIL: !Ref SenderEmail
         SNS_TOPIC_ARN: !Ref PriceDropTopic
         ENVIRONMENT: !Ref Environment
-        SCRAPER_API_KEY: !Ref ScraperApiKey
         RECAPTCHA_SECRET_KEY: !Ref RecaptchaSecretKey
   Api:
     Cors:
